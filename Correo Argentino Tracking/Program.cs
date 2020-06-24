@@ -18,64 +18,71 @@ namespace Correo_Argentino_Tracking
             Console.Write('\n');
 
             string tracking = ReadTracking();
-            RetrieveTracking(tracking);
+            if (string.IsNullOrEmpty(tracking))
+                WriteColor(ConsoleColor.Red, "Hubo un error al procesar el tracking!");
+            else
+                RetrieveTracking(tracking);
 
-            Console.WriteLine("Presiona ENTER para buscar otro tracking, en caso contrario, cualquier otra tecla...");
+            Console.WriteLine("\nPresiona ENTER para buscar otro tracking, en caso contrario, cualquier otra tecla...");
+
             if (Console.ReadKey().Key == ConsoleKey.Enter)
                 Main(args);
         }
 
         static void RetrieveTracking(string tracking)
         {
-            using (WebClient wc = new WebClient())
-            {
-                string url = "https://api.correoargentino.com.ar/backendappcorreo/api/api/shipping-tracking-int-nac?id_shipping=" + tracking;
-                Console.WriteLine("Obteniendo informacion del tracking...");
-                string json = wc.DownloadString(url);
+            using WebClient wc = new WebClient();
+            string url = "https://api.correoargentino.com.ar/backendappcorreo/api/api/shipping-tracking-int-nac?id_shipping=" + tracking;
 
-                TrackingIntNac intNac = TrackingIntNac.FromJson(json);
-                if (intNac.Rta == "OK")
-                {
-                    PrintTracking(intNac);
-                }
-                else
-                {
-                    WriteLineColor(ConsoleColor.Red, "Error: " + json);
-                }
-            }
+            Console.WriteLine("Obteniendo informacion del tracking...");
+            string json = wc.DownloadString(url);
+
+            TrackingIntNac intNac = TrackingIntNac.FromJson(json);
+            if (intNac.Rta == "OK")
+                PrintTracking(intNac);
+            else
+                WriteLineColor(ConsoleColor.Red, "Error: " + json);
         }
+
+
         static void PrintTracking(TrackingIntNac tracking)
         {
-            var pais = tracking.Data.ShippingNac.Eventos.Where(x => !string.IsNullOrEmpty(x.NombrePais)).FirstOrDefault();
-            WriteLineColor(ConsoleColor.White, $"\nOrigen: {pais.NombrePais}");
-            WriteLineColor(ConsoleColor.White, $"Tracking inter: {tracking.Data.Id}");
-            WriteLineColor(ConsoleColor.White, $"Tracking local: {tracking.Data.ItemIdLocal}");
-            WriteLineColor(ConsoleColor.White, $"\nGestion Correo Argentino: {tracking.Data.GestionCorreo}");
-            WriteLineColor(ConsoleColor.White, $"Gestion AFIP: {tracking.Data.ProcesoAfip}");
-
-            var entrega = tracking.Data.ShippingNac.Eventos.Where(x => x.EstadoEntrega == "ENTREGADO").FirstOrDefault();
-            if (entrega != null)
+            if(tracking.Data.ShippingNac?.Cantidad > 0)
             {
-                string entregaStr = entrega.EstadoEntrega + " - " + entrega.MotivoNoEntrega;
-                WriteLineColor(ConsoleColor.Green, $"Estado: {entregaStr}");
+                var pais = tracking.Data.ShippingNac.Eventos.Where(x => !string.IsNullOrEmpty(x.NombrePais)).FirstOrDefault();
+                WriteLineColor(ConsoleColor.White, $"\nOrigen: {pais.NombrePais}");
             }
 
-            WriteLineColor(ConsoleColor.Gray, "\nEstado internacional:");
+            WriteLineColor(ConsoleColor.White, $"Tracking inter: {tracking.Data.Id}");
+
+            // Tracking nacional
+            if (tracking.Data.Id != tracking.Data.ItemIdLocal)
+            {
+                WriteLineColor(ConsoleColor.White, $"Tracking local: {tracking.Data.ItemIdLocal}");
+                WriteLineColor(ConsoleColor.White, $"\nGestion Correo Argentino: {tracking.Data.GestionCorreo}");
+                WriteLineColor(ConsoleColor.White, $"Gestion AFIP: {tracking.Data.ProcesoAfip}");
+
+                var entrega = tracking.Data.ShippingNac.Eventos.Where(x => x.EstadoEntrega == "ENTREGADO").FirstOrDefault();
+                if (entrega != null)
+                    WriteLineColor(ConsoleColor.Green, $"Estado: {entrega.EstadoEntrega} - {entrega.MotivoNoEntrega}");
+            }
+
+            WriteLineColor(ConsoleColor.White, "\nEstado internacional:");
             foreach (var evento in tracking.Data.Eventos)
             {
-                WriteColor(ConsoleColor.DarkGray, $"{evento.HoraEventoAr,-16}\t");
+                WriteColor(ConsoleColor.DarkGray, $"[{evento.HoraEventoAr}][{evento.Destino}] ");
                 WriteColor(ConsoleColor.White, $"{evento.EventoAr,-40}\t");
-                WriteColor(ConsoleColor.Blue, $"{evento.OficinaAr,-40}\n");
+                WriteColor(ConsoleColor.Cyan, $"{evento.OficinaAr,-40}\n");
             }
 
             if (tracking.Data.ShippingNac?.Cantidad > 0)
             {
-                WriteLineColor(ConsoleColor.Gray, "\nEstado nacional:");
+                WriteLineColor(ConsoleColor.White, "\nEstado nacional:");
                 foreach (var evento in tracking.Data.ShippingNac.Eventos)
                 {
-                    WriteColor(ConsoleColor.DarkGray, $"{evento.FechaEvento,-16}\t");
-                    WriteColor(ConsoleColor.White, $"{evento.CodigoEvento,-40}\t");
-                    WriteColor(ConsoleColor.Blue, $"{evento.Planta,-40}\n");
+                    WriteColor(ConsoleColor.DarkGray, $"[{evento.FechaEvento}] ");
+                    WriteColor(ConsoleColor.White, $"{evento.CodigoEvento,-50}\t");
+                    WriteColor(ConsoleColor.Cyan, $"{evento.Planta,-40}\n");
                 }
             }
         }
@@ -98,29 +105,10 @@ namespace Correo_Argentino_Tracking
                 ReadTracking();
             }
 
-            if (tracking.Length == 13 && CheckTrackingValid(tracking))
-            {
+            if (tracking.Length == 13)
                 return tracking;
-            }
+
             return string.Empty;
-        }
-
-        static bool CheckTrackingValid(string tracking)
-        {
-            char first = tracking[0];
-            char second = tracking[1];
-            char third = tracking[2];
-
-            if ((first > 'A' && first < 'Z') && (second > 'A' && second < 'Z') && (third > '0' && third < '9'))
-            {
-                int last = tracking[11];
-                int secondLast = tracking[12];
-                if ((last > 'A' && last < 'Z') && (secondLast > 'A' && secondLast < 'Z'))
-                {
-                    return true;
-                }
-            }
-            return false;
         }
 
         static void WriteLineColor(ConsoleColor color, string value)
